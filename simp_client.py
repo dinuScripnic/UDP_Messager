@@ -1,152 +1,201 @@
+"""Client implementation for the SIMP protocol."""
 import socket
 import sys
-from header import *
+import typing
+
+from message import Message
+from enums import MessageType, Operation, SeqNum
+from constants import EXIT_MESSAGES, MESSAGE_SIZE, TIMEOUT
 
 
 class Client:
-    def __init__(self, host: str, port: int, timeout: int = 5):
+    """Client implementation for the SIMP protocol."""
+
+    def __init__(self, host: str, port: int, timeout: int = TIMEOUT):
         self.host = host
         self.port = port
-        self.name = None
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.s.settimeout(timeout)
+        self.name: str = None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.settimeout(timeout)
         self.connected = False
 
-    def recieve_message(self) -> tuple[dict, str]:
-        """
-        Recieves the message and structures it into a tuple with the header and the message
-        :param self:
-        :return: tuple[dict, str], touple with the header data as a dictioanry and the message as a string
-        """
-        try:
-            data, addr = self.s.recvfrom(1024)
-            if addr != (self.host, self.port):
-                print(
-                    "Recieved a message from an unknown source"
-                )  # just in case, that will never happen
-                exit(1)  # exits the program with error code
-            header = data[:39]  # 39 is the size of the header
-            message = data[39:].decode("ascii")
-            header = unpack_simp_header(header)
-            return (header, message)
-        except socket.timeout:
-            pass
-
-    def send_control_message(self, msg_op: int, message: str = "") -> None:
-        """
-        Sends a control message to the server
-        Args:
-            msg_op (int): message operation, 1 for error, 2 for syn, 4 for acknowledgement, 8 for ending
-            message (str, optional): in case of error, it will be an error message. Defaults to ''.
-        """
-        header = pack_simp_header(
-            msg_type=1, msg_op=msg_op, msg_seq=0, user=self.name, msg_len=len(message)
-        )  # creates the header
-        message = header + message.encode("ascii")  # creates the whole message
-        self.s.sendto(message, (self.host, self.port))  # sends the message
-
-    def send_chat_message(self, message: str, sequence: int = 0) -> None:
-        """
-        Sends a chat message to the server
-        Args:
-            message (str): message to be sent
-            sequence (int, optional): Sequence number, in case the server doesnt recieve and respond with an ACK, seq will be changed to 1. Defaults to 0.
-        """
-        header = pack_simp_header(
-            msg_type=2, msg_op=1, msg_seq=sequence, user=self.name, msg_len=len(message)
-        )  # creates the header
-        self.s.sendto(header + message.encode("ascii"), (self.host, self.port))  # sends the message
-        try:
-            header, message = self.recieve_message()  # waits for the acknowledgement
-            if (
-                header["msg_type"] == 1 and header["msg_op"] == 4
-            ):  # if the server sends an ACK
-                return  # message got to the server
-        except socket.timeout:  # if timeout occures
-            print("Server timed out, retrying...")  # informs the user
-            self.send_chat_message(message, 1)  # resends the message
-
-    def handle_control_message(self, header: dict, message: str) -> None:
-        """
-        Handles the control messages
-        Args:
-            header (dict): header of the message
-            message (str): message itself
-        """
-        if (
-            header["msg_type"] == 1 and header["msg_op"] == 8
-        ):  # if the server wants to close the connection
-            print("Server closed the connection")
-            if self.connected:  # if the client is connected
-                self.send_control_message(4)  # sends the ACK
-            quit(0)  # exits the program
-        elif header["msg_type"] == 1 and header["msg_op"] == 6:  # if the server SYN+ACK
-            self.send_control_message(4)  # sends the ACK
-            self.connected = True  # sets the connected flag to true
-            print("Connection established")
-        elif (
-            header["msg_type"] == 1 and header["msg_op"] == 1
-        ):  # if the server sends an error message, like server busy
-            quit(1)  # exits the program with an error code
-        elif (
-            header["msg_type"] == 1 and header["msg_op"] == 4
-        ):  # if the server sends an ACK
-            pass  # server got the message
-
-    def three_way_handshake(self) -> None:
-        """
-        Implementation of the 3 way handshake
-        """
-        self.send_control_message(msg_op=2)  # sends the syn message
-        header, message = self.recieve_message()  # waits for the acknowledgement
-        self.handle_control_message(header, message)
-        if self.connected:
-            self.chat()
-
-    def chat(self) -> None:
-        """
-        Chating functionality
-        """
-        while self.connected:
-            message = input("Enter your message: ")
-            if message in ["exit", "quit", "close", "bye"]:
-                self.send_control_message(msg_op=8)  # sends the FIN message
-                (
-                    header,
-                    message,
-                ) = self.recieve_message()  # waits for the acknowledgement
-                if header["msg_type"] == 1 and header["msg_op"] == 4:
-                    print("Closing connection")  # informs the user
-                    self.connected = False  # sets the connected flag to false
-                    quit(0)  # exits the program
-            self.send_chat_message(message)  # sends the message
-            header, message = self.recieve_message()  # waits for the message
-            # If you want to check Stop and Wait, comment the next line
-            self.send_control_message(4)  # sends the ACK 
-            if header["msg_type"] == 2:
-                print(f'[{header["user"]}] {message}')  # prints the message
-            elif header["msg_type"] == 1:
-                self.handle_control_message(header, message)
+    @staticmethod
+    def show_usage() -> None:
+        """Shows the usage of the program."""
+        print("Usage: py/python3 simp_client.py <host> <port>")
 
     def start(self) -> None:
-        """
-        Holds the main loop of the client
-        """
+        """Starts the client."""
         self.name = input("Enter your name: ")
         print("Hello ", self.name)
         self.three_way_handshake()
         while self.connected:
             self.chat()
 
+    def three_way_handshake(self) -> None:
+        """Performs the three way handshake."""
+        self.send_message(
+            Message(
+                message_type=MessageType.CONTROL,
+                message_operation=Operation.SYN,
+                user=self.name,
+            )
+        )
+        try:
+            message = self.receive_message()
+        except ConnectionResetError:
+            print("Server not available!")
+            sys.exit(1)
+        except socket.timeout:
+            pass
+        self.handle_control_message(message)
+        if self.connected:
+            self.chat()
 
-def show_usage() -> None:
-    print("Usage: py/python3 simp_client.py <host> <port>")
+    def chat(self) -> None:
+        """Performs the chat."""
+        while self.connected:
+            message = input("Enter your message: ")
+            if message in EXIT_MESSAGES:
+                self.close_connection()
+            message = Message(
+                message_type=MessageType.CHAT,
+                message_operation=Operation.CONST,
+                user=self.name,
+                message_length=len(message),
+                message=message,
+            )
+            self.send_chat_message(message)
+            print("Waiting for response...")
+            while True:
+                try:
+                    received_message = self.receive_message()
+                    break
+                except socket.timeout:
+                    pass
+            self._send_ack_message()
+            if received_message.message_type == MessageType.CHAT:
+                print(received_message)
+            elif received_message.message_type == MessageType.CONTROL:
+                self.handle_control_message(received_message)
+
+    def close_connection(self) -> None:
+        """Closes the connection."""
+        self.send_message(
+            Message(
+                message_type=MessageType.CONTROL,
+                message_operation=Operation.FIN,
+                user=self.name,
+            )
+        )
+        message = self.receive_message()
+        if (
+            message.message_type == MessageType.CONTROL
+            and message.message_operation == Operation.ACK
+        ):
+            print("Closing connection")
+            self.connected = False
+            sys.exit(0)
+
+    def receive_message(self) -> typing.Optional[Message]:
+        """Receive a message from the server and unpacks it."""
+
+        data, addr = self.socket.recvfrom(MESSAGE_SIZE)
+        if addr != (self.host, self.port):
+            print("Received a message from an unknown source")  # Unlikely to happen
+            sys.exit(1)
+
+        message = Message.unpack_message(data)
+        return message
+
+    def send_message(self, message: Message) -> None:
+        """Send a message to the server."""
+        self.socket.sendto(message.pack_simp_message(), (self.host, self.port))
+
+    def send_chat_message(self, message: Message) -> None:
+        """
+        Sends a chat message to the server and waits for an ACK message.
+        If no ACK message is recieved, resends the message.
+
+        Args:
+            message (Message): message object
+
+        """
+        self.send_message(message)
+        try:
+            ack_message = self.receive_message()
+            if (
+                ack_message.message_type == MessageType.CONTROL
+                and ack_message.message_operation == Operation.ACK
+            ):
+                return True
+        except socket.timeout:
+            print("Server timed out, retrying...")
+            message.message_sequence = SeqNum.ERR
+            self.send_chat_message(message)
+
+    def handle_control_message(self, message: Message) -> typing.Optional[bool]:
+        """
+        Handles the control messages.
+
+        Args:
+            message (Message): message object
+        """
+        if (
+            message.message_type == MessageType.CONTROL
+            and message.message_operation == Operation.FIN
+        ):
+            print("Server closed the connection")
+            if self.connected:
+                self._handle_fin_message()
+                return False
+        elif (
+            message.message_type == MessageType.CONTROL
+            and message.message_operation == Operation.SYN_ACK
+        ):
+            self._handle_syn_message()
+            return True
+        elif (
+            message.message_type == MessageType.CONTROL
+            and message.message_operation == Operation.ERR
+        ):
+            print("Server error:", message.message)
+            sys.exit(1)
+        elif (
+            message.message_type == MessageType.CONTROL
+            and message.message_operation == Operation.ACK
+        ):
+            return True
+
+    def _send_ack_message(self) -> None:
+        """Sends an ACK message to the server."""
+        self.send_message(
+            Message(
+                message_type=MessageType.CONTROL,
+                message_operation=Operation.ACK,
+                user=self.name,
+            )
+        )
+
+    def _handle_fin_message(self) -> None:
+        """Handles the FIN message from the server."""
+        self._send_ack_message()
+        self.connected = False
+        sys.exit(0)
+
+    def _handle_syn_message(self) -> None:
+        """Handles the SYN message from the server."""
+        self._send_ack_message()
+        self.connected = True
+        print("Connection established")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        show_usage()
-        exit(1)
+        Client.show_usage()
+        sys.exit(1)
 
-    client = Client(sys.argv[1], int(sys.argv[2]))
+    host = sys.argv[1]
+    port = int(sys.argv[2])
+    client = Client(host, port)
     client.start()

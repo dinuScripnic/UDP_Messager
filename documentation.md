@@ -6,7 +6,9 @@ The code provided is a simple client-server application using the UDP protocol a
 <ol>
 <li>simp_client.py - the client side of the application
 <li>simp_server.py -  the server side of the application
-<li>header.py - a separate module that is used for encoding and decoding the header
+<li>message.py - the module that contains the message structure and the functions for encoding and decoding the message
+<li>enums.py - the module that contains the enums used in the application
+<li>constants.py - the module that contains the constants used in the application
 </ol>
 Server can be launched, then it will wait for the client. When the client will connect they both can chat, <b>IMPORTANT: synchronous conversation</b>. When the converstion needs to be ended, both sides can send a control message in order to do that.
 
@@ -89,3 +91,6 @@ in case thserver does not want to talk it can press 'n' and the client will reci
 ## Libraries used
 * Socket - standard python library
 * struct - standard python library fro structuring and encoding the header
+* sys - standard python library for reading the arguments from the terminal
+* enum - standard python library for creating enums(set of named values)
+* dataclasses - standard python library for creating dataclasses

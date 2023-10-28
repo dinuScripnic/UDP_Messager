@@ -207,33 +207,37 @@ class Server:
         print("Chatting with ", self.allowed_address)
         while True:
             try:
-                message = self.recieve_message()
+                received_message = self.recieve_message()
                 while (
-                    message is None
+                    received_message is None
                 ):  # if the message was from an unallowed address, ignore it
-                    message = self.recieve_message()
+                    received_message = self.recieve_message()
                 self._send_ack_message()
+                if received_message.message_sequence == SeqNum.ERR:
+                    print(
+                        "There was an error sending the message, but eventually it was sent"
+                    )
                 if (
-                    message.message_type == MessageType.CONTROL
+                    received_message.message_type == MessageType.CONTROL
                 ):  # if the message is a control message, handle it
-                    self.handle_control_message(message)
+                    self.handle_control_message(received_message)
                 elif (
-                    message.message_type == MessageType.CHAT
+                    received_message.message_type == MessageType.CHAT
                 ):  # if the message is a chat message, print it
-                    print(message)
-                    message = input(
+                    print(received_message)
+                    message_text = input(
                         "Enter your message: "
                     ).strip()  # get the message from the user
                     if (
-                        message in EXIT_MESSAGES
+                        message_text in EXIT_MESSAGES
                     ):  # if the user wants to quit, send the quit message
                         self.quit()
                     message = Message(
                         message_type=MessageType.CHAT,
                         message_operation=Operation.CONST,
                         user=self.name,
-                        message_length=len(message),
-                        message=message,
+                        message_length=len(message_text),
+                        message=message_text,
                     )
                     self.send_chat_message(message)  # send the message
             except socket.timeout:

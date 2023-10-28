@@ -74,6 +74,10 @@ class Client:
                 except socket.timeout:
                     pass
             self._send_ack_message()
+            if received_message.message_sequence == SeqNum.ERR:
+                print(
+                    "There was an error sending the message, but eventually it was sent"
+                )
             if received_message.message_type == MessageType.CHAT:
                 print(received_message)
             elif received_message.message_type == MessageType.CONTROL:
